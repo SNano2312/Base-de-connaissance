@@ -341,14 +341,22 @@
 
   function tryInitGrist(){
     return new Promise(function(resolve){
-      if(typeof grist === 'undefined'){ resolve(false); return; }
+      // Pas de script Grist chargé, ou pas dans un iframe (page ouverte seule) : impossible d'être un widget Grist.
+      if(typeof grist === 'undefined' || window.self === window.top){ resolve(false); return; }
+
       var settled = false;
-      var timer = setTimeout(function(){ if(!settled){ settled = true; resolve(false); } }, 1800);
+      showBanner('Connexion à Grist en cours… si Grist affiche une demande d\'autorisation, acceptez l\'accès complet.');
+      // Délai généreux : la première fois, Grist attend que la personne approuve manuellement l'accès complet
+      // avant de répondre. Un délai trop court fait basculer l'appli sur le stockage local par erreur.
+      var timer = setTimeout(function(){
+        if(!settled){ settled = true; hideBanner(); resolve(false); }
+      }, 60000);
+
       try{
         grist.ready({ requiredAccess: 'full' });
         grist.docApi.getSelectedTableId().then(function(tableId){
           if(settled) return;
-          settled = true; clearTimeout(timer);
+          settled = true; clearTimeout(timer); hideBanner();
           if(!tableId){ resolve(false); return; }
           gristTableId = tableId;
           grist.onRecords(function(records){
@@ -357,10 +365,10 @@
           });
           resolve(true);
         }).catch(function(){
-          if(!settled){ settled = true; clearTimeout(timer); resolve(false); }
+          if(!settled){ settled = true; clearTimeout(timer); hideBanner(); resolve(false); }
         });
       }catch(e){
-        if(!settled){ settled = true; clearTimeout(timer); resolve(false); }
+        if(!settled){ settled = true; clearTimeout(timer); hideBanner(); resolve(false); }
       }
     });
   }
