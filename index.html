@@ -349,7 +349,11 @@
       // Délai généreux : la première fois, Grist attend que la personne approuve manuellement l'accès complet
       // avant de répondre. Un délai trop court fait basculer l'appli sur le stockage local par erreur.
       var timer = setTimeout(function(){
-        if(!settled){ settled = true; hideBanner(); resolve(false); }
+        if(!settled){
+          settled = true;
+          showBanner('Connexion à Grist : délai dépassé (60s) sans réponse. Cette page n\'a peut-être pas été reconnue comme widget actif par Grist.');
+          resolve(false);
+        }
       }, 60000);
 
       try{
@@ -357,18 +361,30 @@
         grist.docApi.getSelectedTableId().then(function(tableId){
           if(settled) return;
           settled = true; clearTimeout(timer); hideBanner();
-          if(!tableId){ resolve(false); return; }
+          if(!tableId){
+            showBanner('Connexion à Grist : aucune table liée à ce widget (tableId vide).');
+            resolve(false);
+            return;
+          }
           gristTableId = tableId;
           grist.onRecords(function(records){
             entries = (records || []).map(gristRecordToEntry);
             render();
           });
           resolve(true);
-        }).catch(function(){
-          if(!settled){ settled = true; clearTimeout(timer); hideBanner(); resolve(false); }
+        }).catch(function(err){
+          if(!settled){
+            settled = true; clearTimeout(timer);
+            showBanner('Connexion à Grist : échec — ' + esc(err && err.message ? err.message : String(err)));
+            resolve(false);
+          }
         });
       }catch(e){
-        if(!settled){ settled = true; clearTimeout(timer); hideBanner(); resolve(false); }
+        if(!settled){
+          settled = true; clearTimeout(timer);
+          showBanner('Connexion à Grist : erreur au démarrage — ' + esc(e && e.message ? e.message : String(e)));
+          resolve(false);
+        }
       }
     });
   }
