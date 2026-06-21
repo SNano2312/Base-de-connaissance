@@ -351,33 +351,20 @@
       var timer = setTimeout(function(){
         if(!settled){
           settled = true;
-          showBanner('Connexion à Grist : délai dépassé (60s) sans réponse. Cette page n\'a peut-être pas été reconnue comme widget actif par Grist.');
+          showBanner('Connexion à Grist : délai dépassé (60s) sans réception de données depuis le document.');
           resolve(false);
         }
       }, 60000);
 
       try{
         grist.ready({ requiredAccess: 'full' });
-        grist.docApi.getSelectedTableId().then(function(tableId){
-          if(settled) return;
-          settled = true; clearTimeout(timer); hideBanner();
-          if(!tableId){
-            showBanner('Connexion à Grist : aucune table liée à ce widget (tableId vide).');
-            resolve(false);
-            return;
-          }
-          gristTableId = tableId;
-          grist.onRecords(function(records){
-            entries = (records || []).map(gristRecordToEntry);
-            render();
-          });
-          resolve(true);
-        }).catch(function(err){
+        grist.onRecords(function(records){
+          entries = (records || []).map(gristRecordToEntry);
           if(!settled){
-            settled = true; clearTimeout(timer);
-            showBanner('Connexion à Grist : échec — ' + esc(err && err.message ? err.message : String(err)));
-            resolve(false);
+            settled = true; clearTimeout(timer); hideBanner();
+            resolve(true);
           }
+          render();
         });
       }catch(e){
         if(!settled){
@@ -452,7 +439,7 @@
     var now = new Date().toISOString();
     data.updatedAt = now;
     if(backend === 'grist'){
-      await grist.docApi.applyUserActions([['AddRecord', gristTableId, null, entryToGristFields(data, now)]]);
+      await grist.selectedTable.create({ fields: entryToGristFields(data, now) });
       // la liste se met à jour automatiquement via grist.onRecords
     } else {
       data.id = uid(); data.date = now;
@@ -466,7 +453,10 @@
     data.updatedAt = now;
     var existing = entries.find(function(x){ return x.id === id; });
     if(backend === 'grist'){
-      await grist.docApi.applyUserActions([['UpdateRecord', gristTableId, existing.gristId, entryToGristFields(data, existing.date)]]);
+      var fields = entryToGristFields(data, existing.date);
+      var colValues = {};
+      Object.keys(fields).forEach(function(k){ colValues[k] = [fields[k]]; });
+      await grist.selectedTable.updateRecords(colValues, [existing.gristId]);
     } else {
       entries = entries.map(function(x){ return x.id === id ? Object.assign({}, x, data) : x; });
       await persistArray();
@@ -476,7 +466,7 @@
   async function deleteEntry(id){
     var existing = entries.find(function(x){ return x.id === id; });
     if(backend === 'grist' && existing){
-      await grist.docApi.applyUserActions([['RemoveRecord', gristTableId, existing.gristId]]);
+      await grist.selectedTable.destroy(existing.gristId);
     } else {
       entries = entries.filter(function(x){ return x.id !== id; });
       await persistArray();
@@ -740,10 +730,10 @@
 
         if(backend === 'grist'){
           if(!confirm(incoming.length + ' entrée(s) seront ajoutées comme NOUVELLES lignes dans Grist (pas de fusion automatique avec l\'existant). Continuer ?')) return;
-          var actions = incoming.map(function(e){
-            return ['AddRecord', gristTableId, null, entryToGristFields(e, e.date || new Date().toISOString())];
-          });
-          await grist.docApi.applyUserActions(actions);
+          for(var i=0; i<incoming.length; i++){
+            var e = incoming[i];
+            await grist.selectedTable.create({ fields: entryToGristFields(e, e.date || new Date().toISOString()) });
+          }
         } else {
           var byId = {};
           entries.forEach(function(e){ byId[e.id] = e; });
