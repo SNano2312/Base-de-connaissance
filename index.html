@@ -279,7 +279,7 @@
   var STATUTS = {resolu:'Résolu', en_cours:'En cours', recurrent:'Récurrent'};
   var LOCAL_KEY = 'kb_erreurs_vba_sifac';
   var REQUIRED_COLUMNS = ['Systeme','Titre','Statut','Reference','Message','Cause','Correction','Tags','Date','UpdatedAt','PieceJointe'];
-  var ATTACHMENT_MAX_CHARS = 700000; // ~ taille base64 cible après compression (backends non-Grist uniquement)
+  var ATTACHMENT_MAX_CHARS = 80000; // ~ 60 Ko décompressé — réduit car Grist semble omettre les grosses valeurs du flux temps réel des widgets
 
   var entries = [];
   var filters = { search:'', systeme:'', statut:'' };
@@ -667,12 +667,12 @@
 
   async function handleAttachmentFile(file){
     if(!file.type || file.type.indexOf('image/') !== 0){ showToast('Seules les images sont acceptées'); return null; }
-    var maxDim = 1400, quality = 0.75;
+    var maxDim = 900, quality = 0.6;
     var dataUrl = await compressImageFile(file, maxDim, quality);
     var tries = 0;
-    while(dataUrl.length > ATTACHMENT_MAX_CHARS && tries < 4){
-      maxDim = Math.max(600, maxDim - 250);
-      quality = Math.max(0.35, quality - 0.15);
+    while(dataUrl.length > ATTACHMENT_MAX_CHARS && tries < 6){
+      maxDim = Math.max(300, maxDim - 150);
+      quality = Math.max(0.25, quality - 0.1);
       dataUrl = await compressImageFile(file, maxDim, quality);
       tries++;
     }
