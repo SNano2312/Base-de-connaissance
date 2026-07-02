@@ -182,6 +182,11 @@
   }
   .toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
 
+  .attachment-preview{position:relative; display:inline-block; max-width:100%;}
+  .attachment-preview img{max-width:100%; max-height:260px; border-radius:var(--radius-sm); border:1px solid var(--border); display:block;}
+  .attachment-preview .btn-secondary{margin-top:8px;}
+  #attachmentWrap input[type=file]{font-size:12.5px; color:var(--muted);}
+
   #importFile{display:none;}
   .help-text{font-size:12px; color:var(--muted); line-height:1.7; margin-top:6px;}
   .steps{font-size:13px; line-height:1.8; padding-left:20px; margin:10px 0;}
@@ -273,7 +278,8 @@
   var SYSTEMES = ['SIFAC','VBA — Ficher_Inj','VBA — ZSTA_DEST_WF_ACS','oHRis','Notilus','Boîte à outils','RH','DigDash','Autre'];
   var STATUTS = {resolu:'Résolu', en_cours:'En cours', recurrent:'Récurrent'};
   var LOCAL_KEY = 'kb_erreurs_vba_sifac';
-  var REQUIRED_COLUMNS = ['Systeme','Titre','Statut','Reference','Message','Cause','Correction','Tags','Date','UpdatedAt'];
+  var REQUIRED_COLUMNS = ['Systeme','Titre','Statut','Reference','Message','Cause','Correction','Tags','Date','UpdatedAt','PieceJointe'];
+  var ATTACHMENT_MAX_CHARS = 700000; // ~ taille base64 cible après compression
 
   var entries = [];
   var filters = { search:'', systeme:'', statut:'' };
@@ -326,7 +332,7 @@
     return {
       Systeme:data.systeme, Titre:data.titre, Statut:data.statut, Reference:data.reference||'',
       Message:data.message||'', Cause:data.cause||'', Correction:data.correction||'',
-      Tags:(data.tags||[]).join(', '), Date:dateVal, UpdatedAt:data.updatedAt
+      Tags:(data.tags||[]).join(', '), Date:dateVal, UpdatedAt:data.updatedAt, PieceJointe:data.pieceJointe||''
     };
   }
   function gristRecordToEntry(r){
@@ -335,7 +341,8 @@
       systeme:r.Systeme || SYSTEMES[0], titre:r.Titre || '(sans titre)', statut:r.Statut || 'en_cours',
       reference:r.Reference || '', message:r.Message || '', cause:r.Cause || '', correction:r.Correction || '',
       tags:(r.Tags||'').split(',').map(function(t){return t.trim();}).filter(Boolean),
-      date:r.Date || new Date().toISOString(), updatedAt:r.UpdatedAt || r.Date || new Date().toISOString()
+      date:r.Date || new Date().toISOString(), updatedAt:r.UpdatedAt || r.Date || new Date().toISOString(),
+      pieceJointe:r.PieceJointe || ''
     };
   }
 
@@ -527,7 +534,7 @@
     listArea.innerHTML = list.map(function(e){
       var snippet = (e.message || '').replace(/\s+/g,' ').trim();
       return '<div class="entry-card statut-' + e.statut + '" data-id="' + e.id + '">'
-        + '<div class="entry-top"><div class="entry-titre">' + esc(e.titre) + '</div><div class="entry-date">' + fmtDate(e.updatedAt||e.date) + '</div></div>'
+        + '<div class="entry-top"><div class="entry-titre">' + esc(e.titre) + (e.pieceJointe ? ' <svg class="attach-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12" style="display:inline;vertical-align:middle;opacity:.6;"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>' : '') + '</div><div class="entry-date">' + fmtDate(e.updatedAt||e.date) + '</div></div>'
         + '<div class="entry-badges">'
           + '<span class="badge badge-systeme">' + esc(e.systeme) + '</span>'
           + '<span class="badge badge-' + e.statut + '">' + STATUTS[e.statut] + '</span>'
@@ -586,6 +593,7 @@
       + field('Cause', e.cause)
       + field('Correction appliquée', e.correction, true)
       + (e.tags && e.tags.length ? '<div class="field"><label>Tags</label><div>' + e.tags.map(function(t){return '<span class="badge badge-systeme" style="margin-right:5px;">'+esc(t)+'</span>';}).join('') + '</div></div>' : '')
+      + (e.pieceJointe ? '<div class="field"><label>Pièce jointe</label><div class="attachment-preview"><img src="'+e.pieceJointe+'" alt="Pièce jointe" id="attachmentZoomImg" style="cursor:zoom-in;"></div></div>' : '')
       + '<div class="field"><label>Dernière mise à jour</label><div style="font-size:13px;color:var(--muted);">' + fmtDate(e.updatedAt||e.date) + '</div></div>';
 
     drawerBody.querySelectorAll('.copy-btn').forEach(function(b){
@@ -594,6 +602,13 @@
         copyToClipboard(decodeURIComponent(b.getAttribute('data-copy')));
       });
     });
+    var zoomImg = document.getElementById('attachmentZoomImg');
+    if(zoomImg){
+      zoomImg.addEventListener('click', function(){
+        var w = window.open('');
+        if(w) w.document.write('<title>' + esc(e.titre) + '</title><body style="margin:0;background:#111;display:flex;align-items:center;justify-content:center;min-height:100vh;"><img src="'+e.pieceJointe+'" style="max-width:100%;max-height:100vh;"></body>');
+      });
+    }
 
     drawerFoot.innerHTML =
       '<button class="btn-danger" id="deleteBtn">Supprimer</button>'
@@ -622,6 +637,78 @@
     }
   }
 
+  /* ───────── Pièce jointe (image compressée en base64) ───────── */
+  function compressImageFile(file, maxDim, quality){
+    return new Promise(function(resolve, reject){
+      var reader = new FileReader();
+      reader.onload = function(ev){
+        var img = new Image();
+        img.onload = function(){
+          var w = img.width, h = img.height;
+          var scale = Math.min(1, maxDim / Math.max(w, h));
+          var cw = Math.max(1, Math.round(w * scale)), ch = Math.max(1, Math.round(h * scale));
+          var canvas = document.createElement('canvas');
+          canvas.width = cw; canvas.height = ch;
+          var ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, cw, ch);
+          resolve(canvas.toDataURL('image/jpeg', quality));
+        };
+        img.onerror = function(){ reject(new Error('Image illisible')); };
+        img.src = ev.target.result;
+      };
+      reader.onerror = function(){ reject(new Error('Lecture du fichier impossible')); };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function handleAttachmentFile(file){
+    if(!file.type || file.type.indexOf('image/') !== 0){ showToast('Seules les images sont acceptées'); return null; }
+    var maxDim = 1400, quality = 0.75;
+    var dataUrl = await compressImageFile(file, maxDim, quality);
+    var tries = 0;
+    while(dataUrl.length > ATTACHMENT_MAX_CHARS && tries < 4){
+      maxDim = Math.max(600, maxDim - 250);
+      quality = Math.max(0.35, quality - 0.15);
+      dataUrl = await compressImageFile(file, maxDim, quality);
+      tries++;
+    }
+    if(dataUrl.length > ATTACHMENT_MAX_CHARS){
+      showToast('Image trop volumineuse même après compression, réessayez avec une capture plus petite');
+      return null;
+    }
+    return dataUrl;
+  }
+
+  function renderAttachmentField(currentDataUrl){
+    var wrap = document.getElementById('attachmentWrap');
+    if(!wrap) return;
+    wrap.innerHTML = currentDataUrl
+      ? '<div class="attachment-preview"><img src="'+currentDataUrl+'" alt="Pièce jointe"><button type="button" class="btn-secondary" id="removeAttachmentBtn">Retirer l\'image</button></div>'
+      : '<input type="file" id="f_attachment_file" accept="image/*">';
+    if(currentDataUrl){
+      document.getElementById('removeAttachmentBtn').addEventListener('click', function(){
+        currentAttachment = '';
+        renderAttachmentField('');
+      });
+    } else {
+      document.getElementById('f_attachment_file').addEventListener('change', async function(ev){
+        var file = ev.target.files[0];
+        if(!file) return;
+        wrap.innerHTML = '<div class="help-text">Compression de l\'image…</div>';
+        try{
+          var dataUrl = await handleAttachmentFile(file);
+          if(dataUrl){ currentAttachment = dataUrl; renderAttachmentField(dataUrl); }
+          else { renderAttachmentField(''); }
+        }catch(err){
+          showToast('Erreur : ' + err.message);
+          renderAttachmentField('');
+        }
+      });
+    }
+  }
+
+  var currentAttachment = '';
+
   function renderForm(e){
     drawerTitle.textContent = editingId ? 'Modifier l\'entrée' : 'Nouvelle entrée';
     drawerBody.innerHTML =
@@ -638,7 +725,11 @@
       + '<div class="field"><label>Message d\'erreur exact</label><textarea id="f_message" rows="3" placeholder="Erreur d\'exécution \'9\' : l\'indice n\'appartient pas à la sélection…">'+esc(e.message)+'</textarea></div>'
       + '<div class="field"><label>Cause identifiée</label><textarea id="f_cause" rows="3" placeholder="Ex : la feuille ZGDU contient une ligne vide non gérée par la boucle…">'+esc(e.cause)+'</textarea></div>'
       + '<div class="field"><label>Correction appliquée</label><textarea id="f_correction" rows="4" placeholder="Code ou démarche de correction…">'+esc(e.correction)+'</textarea></div>'
-      + '<div class="field"><label>Tags (séparés par des virgules)</label><input type="text" id="f_tags" value="'+esc((e.tags||[]).join(', '))+'" placeholder="injection, BAL_SIFAC_ACS, contrôle"></div>';
+      + '<div class="field"><label>Tags (séparés par des virgules)</label><input type="text" id="f_tags" value="'+esc((e.tags||[]).join(', '))+'" placeholder="injection, BAL_SIFAC_ACS, contrôle"></div>'
+      + '<div class="field"><label>Pièce jointe (une image)</label><div id="attachmentWrap"></div><div class="help-text">Capture d\'écran de l\'erreur par exemple. Compressée automatiquement, une seule image par entrée.</div></div>';
+
+    currentAttachment = e.pieceJointe || '';
+    renderAttachmentField(currentAttachment);
 
     drawerFoot.innerHTML =
       '<div></div><div style="display:flex;gap:8px;">'
@@ -662,7 +753,8 @@
         message: document.getElementById('f_message').value.trim(),
         cause: document.getElementById('f_cause').value.trim(),
         correction: document.getElementById('f_correction').value.trim(),
-        tags: tagsRaw.split(',').map(function(t){return t.trim();}).filter(Boolean)
+        tags: tagsRaw.split(',').map(function(t){return t.trim();}).filter(Boolean),
+        pieceJointe: currentAttachment || ''
       };
       var btn = this; btn.disabled = true; var prevText = btn.textContent; btn.textContent = 'Enregistrement…';
       try{
