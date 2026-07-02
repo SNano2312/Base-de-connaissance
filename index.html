@@ -344,7 +344,7 @@
       reference:r.Reference || '', message:r.Message || '', cause:r.Cause || '', correction:r.Correction || '',
       tags:(r.Tags||'').split(',').map(function(t){return t.trim();}).filter(Boolean),
       date:r.Date || new Date().toISOString(), updatedAt:r.UpdatedAt || r.Date || new Date().toISOString(),
-      pieceJointe: typeof r.PieceJointe === 'string' ? r.PieceJointe : ''
+      pieceJointe: r.PieceJointe ? String(r.PieceJointe) : ''
     };
   }
 
@@ -596,6 +596,7 @@
       + field('Correction appliquée', e.correction, true)
       + (e.tags && e.tags.length ? '<div class="field"><label>Tags</label><div>' + e.tags.map(function(t){return '<span class="badge badge-systeme" style="margin-right:5px;">'+esc(t)+'</span>';}).join('') + '</div></div>' : '')
       + (e.pieceJointe ? '<div class="field"><label>Pièce jointe</label><div class="attachment-preview"><img src="'+e.pieceJointe+'" alt="Pièce jointe" id="attachmentZoomImg" style="cursor:zoom-in;"></div></div>' : '')
+      + '<div class="field"><label>⚠ Diagnostic temporaire</label><div class="field-readonly" style="font-size:11px;">type: '+esc(typeof e.pieceJointe)+' | longueur: '+esc(String(e.pieceJointe ? e.pieceJointe.length : 0))+' | début: '+esc(e.pieceJointe ? e.pieceJointe.slice(0,60) : '(vide)')+'</div></div>'
       + '<div class="field"><label>Dernière mise à jour</label><div style="font-size:13px;color:var(--muted);">' + fmtDate(e.updatedAt||e.date) + '</div></div>';
 
     drawerBody.querySelectorAll('.copy-btn').forEach(function(b){
